@@ -1,4 +1,9 @@
-import { fetchFigmaFile, extractFileKey, parseDesignTree } from '../services/figmaService.js';
+import {
+  fetchFigmaFile,
+  parseDesignTree,
+  parseFigmaUrl,
+} from '../services/figmaService.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 /**
  * Handle Figma file import
@@ -9,41 +14,38 @@ export const importFigmaFile = async (req, res, next) => {
   try {
     const { url } = req.body;
 
-    // Validate URL
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid request. URL is required and must be a string.',
-      });
+    // Use pre-validated metadata from middleware or parse directly
+    const figmaMeta = req.figmaMeta || parseFigmaUrl(url);
+
+    if (!figmaMeta.isValid || !figmaMeta.fileKey) {
+      throw new AppError(
+        'Invalid Figma URL. Please provide a valid Figma file or design URL.',
+        400,
+        'INVALID_FIGMA_URL'
+      );
     }
 
-    // Extract file key from URL
-    const fileKey = extractFileKey(url);
-    if (!fileKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid Figma URL. Please provide a valid Figma file URL.',
-      });
-    }
+    const fileKey = figmaMeta.fileKey;
 
     // Get Figma token from environment
     const figmaToken = process.env.FIGMA_TOKEN;
     if (!figmaToken) {
-      return res.status(500).json({
-        success: false,
-        error: 'Figma token not configured. Please set FIGMA_TOKEN in environment variables.',
-      });
+      throw new AppError(
+        'Figma token not configured. Please set FIGMA_TOKEN in environment variables.',
+        500,
+        'MISSING_FIGMA_TOKEN'
+      );
     }
 
     // Fetch Figma file
-    console.log(`📥 Fetching Figma file: ${fileKey}`);
+    console.log(`📥 Fetching Figma file: ${fileKey}${figmaMeta.nodeId ? ` (Target Node: ${figmaMeta.nodeId})` : ''}`);
     const figmaData = await fetchFigmaFile(fileKey, figmaToken);
 
     // Parse and normalize the tree
-    console.log('🔄 Parsing design tree...');
+    console.log('🔄 Parsing design tree and applying semantic classification...');
     const tree = parseDesignTree(figmaData);
 
-    // Return success response
+    // Return success response with preserved structure and optional target nodeId
     return res.status(200).json({
       success: true,
       data: {
@@ -52,26 +54,10 @@ export const importFigmaFile = async (req, res, next) => {
         totalNodeCount: tree.totalNodeCount,
         tree: tree.pages.length > 0 ? tree.pages[0] : null,
         pages: tree.pages,
+        targetNodeId: figmaMeta.nodeId || null,
       },
     });
   } catch (error) {
-    console.error('❌ Error importing Figma file:', error.message);
-    
-    // Handle specific Figma API errors
-    if (error.response?.status === 401) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid Figma token. Please check your FIGMA_TOKEN.',
-      });
-    }
-
-    if (error.response?.status === 404) {
-      return res.status(404).json({
-        success: false,
-        error: 'Figma file not found. Please check the file URL.',
-      });
-    }
-
     return next(error);
   }
 };
@@ -84,5 +70,6 @@ export const healthCheck = (req, res) => {
   res.json({
     success: true,
     message: 'Figma API is operational',
+    timestamp: new Date().toISOString(),
   });
 };

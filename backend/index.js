@@ -1,9 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import figmaRoutes from './src/routes/figmaRoutes.js';
+import { errorHandler, notFoundHandler } from './src/middleware/errorHandler.js';
 
-// Load environment variables
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables from backend/.env and current working directory
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config();
 
 const app = express();
@@ -19,24 +26,25 @@ app.use('/api/figma', figmaRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Figma Design Parser API is running' });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    error: err.message || 'Internal server error'
+  res.json({
+    status: 'ok',
+    message: 'Figma Design Parser API is running',
+    timestamp: new Date().toISOString(),
   });
 });
 
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json({ success: false, error: 'Route not found' });
-});
+app.use(notFoundHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
+// Centralized error handling middleware
+app.use(errorHandler);
+
+// Only listen if executed directly as entrypoint (not when imported for tests)
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;

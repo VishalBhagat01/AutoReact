@@ -2,15 +2,9 @@
  * Backend utility functions
  */
 
-/**
- * Validate Figma URL format
- * @param {string} url - URL to validate
- * @returns {boolean} Is valid
- */
-export const isValidFigmaUrl = (url) => {
-  if (!url || typeof url !== 'string') return false;
-  return /figma\.com\/(file|design)\//.test(url);
-};
+import { isValidFigmaUrl } from '../utility/url.js';
+
+export { isValidFigmaUrl };
 
 /**
  * Validate Figma token format
