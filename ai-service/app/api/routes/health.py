@@ -42,25 +42,28 @@ async def v1_health_check() -> HealthResponse:
 async def get_capabilities() -> CapabilitiesResponse:
     """
     Describes processing capabilities currently implemented in the Python microservice.
-    Future features (geometry reasoning, semantic inference, LangGraph, React code synthesis)
-    are accurately reported as false / not operational.
+    Milestone 6 operational capabilities: geometry engine, spatial relationships,
+    relationship graph, layout inference, and repeated component detection.
     """
     return CapabilitiesResponse(
         service=settings.SERVICE_NAME,
         version=settings.SERVICE_VERSION,
         status="operational",
         capabilities={
-            # Implemented capabilities in Milestone 5
+            # Operational foundational capabilities
             "health_check": True,
             "internal_service_authentication": True,
             "design_payload_validation": True,
             "design_metadata_extraction": True,
             "node_counting": True,
             "structural_inspection": True,
-            # Future AI & intelligence capabilities (Pending subsequent milestones)
-            "geometry_spatial_analysis": False,
+            # Operational Geometry & Design Intelligence capabilities (Milestone 6)
+            "geometry_spatial_analysis": True,
+            "relationship_graph": True,
+            "layout_inference": True,
+            "repeated_component_detection": True,
+            # Future AI & code generation capabilities (Pending Milestone 7+)
             "semantic_reasoning": False,
-            "relationship_graph": False,
             "langgraph_orchestration": False,
             "llm_code_generation": False,
             "code_generation": False,

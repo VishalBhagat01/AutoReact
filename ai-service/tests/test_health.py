@@ -41,7 +41,7 @@ def test_capabilities_endpoint(client: TestClient):
     assert "v1" in data["supported_versions"]
 
     capabilities = data["capabilities"]
-    # Operational features
+    # Foundational features
     assert capabilities["health_check"] is True
     assert capabilities["internal_service_authentication"] is True
     assert capabilities["design_payload_validation"] is True
@@ -49,11 +49,16 @@ def test_capabilities_endpoint(client: TestClient):
     assert capabilities["node_counting"] is True
     assert capabilities["structural_inspection"] is True
 
+    # Milestone 6 Geometry & Intelligence capabilities
+    assert capabilities["geometry_spatial_analysis"] is True
+    assert capabilities["relationship_graph"] is True
+    assert capabilities["layout_inference"] is True
+    assert capabilities["repeated_component_detection"] is True
+
     # Future features must NOT be marked operational
-    assert capabilities["geometry_spatial_analysis"] is False
     assert capabilities["semantic_reasoning"] is False
-    assert capabilities["relationship_graph"] is False
     assert capabilities["langgraph_orchestration"] is False
     assert capabilities["llm_code_generation"] is False
+    assert capabilities["code_generation"] is False
     assert capabilities["react_code_synthesis"] is False
     assert capabilities["visual_validation"] is False

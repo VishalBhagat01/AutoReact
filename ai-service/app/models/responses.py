@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
+from app.models.geometry import DetectedComponent, LayoutInference, RelationshipGraphData
 
 
 class ErrorResponse(BaseModel):
@@ -82,3 +83,13 @@ class DesignAnalysisResponse(BaseModel):
         description="Detailed execution status per capability ('completed' vs 'pending')",
     )
     message: str = Field(..., description="Status summary message")
+    graph: Optional[RelationshipGraphData] = Field(default=None, description="Complete design relationship graph")
+    inferred_layouts: Optional[List[LayoutInference]] = Field(
+        default=None, alias="inferredLayouts", description="Deterministic inferred layouts for containers"
+    )
+    detected_components: Optional[List[DetectedComponent]] = Field(
+        default=None, alias="detectedComponents", description="Identified reusable patterns and components"
+    )
+    geometry_summary: Optional[Dict[str, Any]] = Field(
+        default=None, alias="geometrySummary", description="Alignment, spacing, and grid metrics"
+    )
