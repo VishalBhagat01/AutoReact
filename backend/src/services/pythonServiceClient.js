@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler.js';
  *  - Implements automatic retries with exponential backoff for transient network failures.
  *  - Sanitizes logs to prevent secret leakage.
  *  - Standardizes error envelopes into AppError instances.
+ *  - Provides endpoints for geometry analysis, layout inference, graph generation, and component detection.
  */
 export class PythonServiceClient {
   /**
@@ -242,6 +243,86 @@ export class PythonServiceClient {
     return this.request({
       method: 'POST',
       url: '/api/v1/design/analyze',
+      data: designPayload,
+      timeout: options.timeout,
+    });
+  }
+
+  /**
+   * Perform deep geometric analysis (bounding boxes, alignments, spacing, overlaps, grids)
+   * POST /api/v1/geometry/analyze
+   * @param {Object} designPayload - Normalized design payload
+   * @param {Object} [options] - Request options
+   * @returns {Promise<Object>}
+   */
+  async analyzeGeometry(designPayload, options = {}) {
+    if (!designPayload || typeof designPayload !== 'object') {
+      throw new AppError('Design payload object is required for geometry analysis', 400, 'MISSING_PAYLOAD');
+    }
+
+    return this.request({
+      method: 'POST',
+      url: '/api/v1/geometry/analyze',
+      data: designPayload,
+      timeout: options.timeout,
+    });
+  }
+
+  /**
+   * Infer deterministic layout patterns (flex row, flex col, grid, stack, overlay, card, nav)
+   * POST /api/v1/layout/infer
+   * @param {Object} designPayload - Normalized design payload
+   * @param {Object} [options] - Request options
+   * @returns {Promise<Array>}
+   */
+  async inferLayout(designPayload, options = {}) {
+    if (!designPayload || typeof designPayload !== 'object') {
+      throw new AppError('Design payload object is required for layout inference', 400, 'MISSING_PAYLOAD');
+    }
+
+    return this.request({
+      method: 'POST',
+      url: '/api/v1/layout/infer',
+      data: designPayload,
+      timeout: options.timeout,
+    });
+  }
+
+  /**
+   * Generate complete NetworkX design relationship graph
+   * POST /api/v1/graph/generate
+   * @param {Object} designPayload - Normalized design payload
+   * @param {Object} [options] - Request options
+   * @returns {Promise<Object>}
+   */
+  async generateGraph(designPayload, options = {}) {
+    if (!designPayload || typeof designPayload !== 'object') {
+      throw new AppError('Design payload object is required for graph generation', 400, 'MISSING_PAYLOAD');
+    }
+
+    return this.request({
+      method: 'POST',
+      url: '/api/v1/graph/generate',
+      data: designPayload,
+      timeout: options.timeout,
+    });
+  }
+
+  /**
+   * Detect repeated visual patterns and Figma component instances
+   * POST /api/v1/components/detect
+   * @param {Object} designPayload - Normalized design payload
+   * @param {Object} [options] - Request options
+   * @returns {Promise<Array>}
+   */
+  async detectComponents(designPayload, options = {}) {
+    if (!designPayload || typeof designPayload !== 'object') {
+      throw new AppError('Design payload object is required for component detection', 400, 'MISSING_PAYLOAD');
+    }
+
+    return this.request({
+      method: 'POST',
+      url: '/api/v1/components/detect',
       data: designPayload,
       timeout: options.timeout,
     });

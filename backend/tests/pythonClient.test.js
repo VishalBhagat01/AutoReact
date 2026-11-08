@@ -43,7 +43,10 @@ describe('Python AI Service Client & Integration', () => {
               design_payload_validation: true,
               design_metadata_extraction: true,
               node_counting: true,
-              geometry_spatial_analysis: false,
+              geometry_spatial_analysis: true,
+              relationship_graph: true,
+              layout_inference: true,
+              repeated_component_detection: true,
               semantic_reasoning: false,
               code_generation: false,
             },
@@ -52,9 +55,8 @@ describe('Python AI Service Client & Integration', () => {
           }));
         }
 
-        // Protected analysis endpoint
-        if (req.method === 'POST' && req.url === '/api/v1/design/analyze') {
-          // Check shared secret
+        // Check authentication for all protected endpoints
+        if (req.url.startsWith('/api/v1/')) {
           if (!receivedAuthHeader) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({
@@ -72,7 +74,54 @@ describe('Python AI Service Client & Integration', () => {
               code: 'FORBIDDEN',
             }));
           }
+        }
 
+        // POST /api/v1/geometry/analyze
+        if (req.method === 'POST' && req.url === '/api/v1/geometry/analyze') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            success: true,
+            requestId: 'req_geo_1',
+            nodeCount: 2,
+            boundsByNodeId: { '1:1': { x: 0, y: 0, width: 100, height: 100 } },
+            alignments: [],
+            spacings: [],
+            overlaps: [],
+            gridClusters: [],
+          }));
+        }
+
+        // POST /api/v1/layout/infer
+        if (req.method === 'POST' && req.url === '/api/v1/layout/infer') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify([
+            { nodeId: '1:1', pattern: 'FLEX_ROW', confidence: 0.95, evidence: ['Auto layout'] },
+          ]));
+        }
+
+        // POST /api/v1/graph/generate
+        if (req.method === 'POST' && req.url === '/api/v1/graph/generate') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({
+            nodes: [{ id: '1:1', name: 'Root', type: 'FRAME' }],
+            edges: [],
+            nodeCount: 1,
+            edgeCount: 0,
+            edgeTypeDistribution: {},
+            analysisWarnings: [],
+          }));
+        }
+
+        // POST /api/v1/components/detect
+        if (req.method === 'POST' && req.url === '/api/v1/components/detect') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify([
+            { componentId: 'comp_1', name: 'Button', source: 'inferred_pattern', instanceCount: 2 },
+          ]));
+        }
+
+        // POST /api/v1/design/analyze
+        if (req.method === 'POST' && req.url === '/api/v1/design/analyze') {
           let body = '';
           req.on('data', chunk => { body += chunk; });
           req.on('end', () => {
@@ -111,7 +160,8 @@ describe('Python AI Service Client & Integration', () => {
                 },
                 capabilities: {
                   payload_validation: 'completed',
-                  geometry_spatial_analysis: 'pending',
+                  geometry_spatial_analysis: 'completed',
+                  relationship_graph: 'completed',
                   semantic_reasoning: 'pending',
                   code_generation: 'pending',
                 },
@@ -181,7 +231,6 @@ describe('Python AI Service Client & Integration', () => {
     });
 
     it('detects service downtime and throws 503 AI_SERVICE_UNAVAILABLE', async () => {
-      // Point client to unused port
       const client = new PythonServiceClient({
         baseUrl: 'http://127.0.0.1:49876',
         secret: 'test_secret',
@@ -240,7 +289,7 @@ describe('Python AI Service Client & Integration', () => {
       const result = await client.getCapabilities();
       assert.equal(result.status, 'operational');
       assert.equal(result.capabilities.health_check, true);
-      assert.equal(result.capabilities.geometry_spatial_analysis, false);
+      assert.equal(result.capabilities.geometry_spatial_analysis, true);
       assert.equal(result.capabilities.code_generation, false);
     });
 
@@ -251,6 +300,27 @@ describe('Python AI Service Client & Integration', () => {
       });
 
       assert.equal(receivedAuthHeader, 'test_secret_key_xyz');
+    });
+
+    it('client queries analyzeGeometry successfully', async () => {
+      const geo = await client.analyzeGeometry({ tree: { id: '1:1' } });
+      assert.equal(geo.success, true);
+      assert.equal(geo.nodeCount, 2);
+    });
+
+    it('client queries inferLayout successfully', async () => {
+      const layouts = await client.inferLayout({ tree: { id: '1:1' } });
+      assert.equal(layouts[0].pattern, 'FLEX_ROW');
+    });
+
+    it('client queries generateGraph successfully', async () => {
+      const graph = await client.generateGraph({ tree: { id: '1:1' } });
+      assert.equal(graph.nodeCount, 1);
+    });
+
+    it('client queries detectComponents successfully', async () => {
+      const comps = await client.detectComponents({ tree: { id: '1:1' } });
+      assert.equal(comps[0].componentId, 'comp_1');
     });
 
     it('handles 401 Unauthorized when secret is missing', async () => {
@@ -351,6 +421,7 @@ describe('Python AI Service Client & Integration', () => {
       assert.equal(body.success, true);
       assert.equal(body.data.status, 'operational');
       assert.equal(body.data.capabilities.node_counting, true);
+      assert.equal(body.data.capabilities.geometry_spatial_analysis, true);
       assert.equal(body.data.capabilities.code_generation, false);
     });
 
@@ -378,6 +449,66 @@ describe('Python AI Service Client & Integration', () => {
       assert.ok(body.data.requestId.startsWith('req_'));
     });
 
+    it('POST /api/ai/geometry proxies geometry analysis', async () => {
+      const res = await fetch(`${expressBaseUrl}/api/ai/geometry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tree: { id: '1:101', name: 'Frame', type: 'FRAME' },
+        }),
+      });
+
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.success, true);
+      assert.equal(body.data.nodeCount, 2);
+    });
+
+    it('POST /api/ai/layout proxies layout inference', async () => {
+      const res = await fetch(`${expressBaseUrl}/api/ai/layout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tree: { id: '1:102', name: 'Frame', type: 'FRAME' },
+        }),
+      });
+
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.success, true);
+      assert.equal(body.data[0].pattern, 'FLEX_ROW');
+    });
+
+    it('POST /api/ai/graph proxies graph generation', async () => {
+      const res = await fetch(`${expressBaseUrl}/api/ai/graph`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tree: { id: '1:103', name: 'Frame', type: 'FRAME' },
+        }),
+      });
+
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.success, true);
+      assert.equal(body.data.nodeCount, 1);
+    });
+
+    it('POST /api/ai/components/detect proxies component detection', async () => {
+      const res = await fetch(`${expressBaseUrl}/api/ai/components/detect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tree: { id: '1:104', name: 'Frame', type: 'FRAME' },
+        }),
+      });
+
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.success, true);
+      assert.equal(body.data[0].componentId, 'comp_1');
+    });
+
     it('POST /api/ai/analyze validates missing design payload', async () => {
       const res = await fetch(`${expressBaseUrl}/api/ai/analyze`, {
         method: 'POST',
@@ -392,7 +523,6 @@ describe('Python AI Service Client & Integration', () => {
     });
 
     it('POST /api/ai/analyze handles Python service downtime with 503', async () => {
-      // Temporarily change client URL to an unreachable port
       pythonServiceClient.baseUrl = 'http://127.0.0.1:49999';
 
       const res = await fetch(`${expressBaseUrl}/api/ai/analyze`, {
@@ -408,10 +538,8 @@ describe('Python AI Service Client & Integration', () => {
       assert.equal(body.success, false);
       assert.equal(body.code, 'AI_SERVICE_UNAVAILABLE');
       assert.ok(body.error.includes('unreachable'));
-      // Verify no secrets appear in the response
       assert.ok(!JSON.stringify(body).includes('test_secret_key_xyz'));
 
-      // Restore
       pythonServiceClient.baseUrl = mockPythonUrl;
     });
   });

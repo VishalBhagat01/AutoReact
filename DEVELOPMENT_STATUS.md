@@ -498,3 +498,80 @@ To add AI and design intelligence without replacing the existing Node.js platfor
   * **15 passed** with Node 22 native test runner testing client initialization, secret masking, downtime detection, transient retries, mock server contract verification, and Express AI endpoints.
 * **Live Integration Tests ([`backend/tests/realIntegration.test.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/tests/realIntegration.test.js)):**
   * **7 passed** with both the live Python Uvicorn process and live Node.js Express server running concurrently, validating full round-trip HTTP requests, authentication enforcement, Pydantic validation rejection, and AST analysis delivery.
+
+
+---
+
+## 12. Milestone Completed: Geometry Analysis & Design Relationship Graph (Step 6)
+
+### 12.1 Implemented Geometry & Spatial Capabilities
+* **Deterministic Geometry Engine ([`agent/app/engine/geometry.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/engine/geometry.py)):**
+  * Safe `BoundingBox` extraction from `bounds`, `absoluteBoundingBox`, `relativeTransform`, and raw coordinates with fallback for zero or missing dimensions.
+  * Relative coordinate transformation (`RelativeBounds`) relative to parent container frames.
+  * Configurable tolerance-based alignment detection (tolerance = 3.0px) across 6 alignment axes: `top`, `bottom`, `center_y` (horizontal axis) and `left`, `right`, `center_x` (vertical axis).
+  * Axis-Aligned Bounding Box (AABB) intersection and spatial containment detection with intersection area, percentage ratios, and container identification.
+* **Spatial Relationship Engine ([`agent/app/engine/spatial.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/engine/spatial.py)):**
+  * Visual reading order sorting (top-to-bottom, left-to-right) clustering elements into visual rows.
+  * Sibling gap and spacing calculation with consistency verification along horizontal and vertical sequences.
+  * 2D regular Grid structure detection: clusters elements by row and column baselines, verifies uniform cell dimensions (within 20%) and consistent row/col gutters, and builds `matrix[r][c]`.
+* **Layout Pattern Inference ([`agent/app/engine/layout_inference.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/engine/layout_inference.py)):**
+  * Inferred patterns: `FLEX_ROW`, `FLEX_COLUMN`, `GRID`, `STACK`, `OVERLAY`, `CARD`, `NAVIGATION`, `ABSOLUTE`.
+  * Figma Auto Layout properties (`mode`, `gap`, `justifyContent`, `alignItems`) utilized as primary high-confidence evidence (confidence 0.95 - 0.98).
+  * Geometric fallback inference with confidence scores and explainable supporting evidence list (`evidence: []`).
+* **Repeated Component & Pattern Detector ([`agent/app/engine/component_detector.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/engine/component_detector.py)):**
+  * Distinguishes native Figma components/instances (`source: 'figma_component'`) from inferred visual patterns (`source: 'inferred_pattern'`).
+  * Structural fingerprint hashing based on child count, child node types tuple, and binned aspect ratio.
+  * Multi-factor similarity scoring (geometry aspect ratio + border radius + colors + typography).
+  * Property variation extraction across instances (identifying candidate React props such as `text` or `colors`).
+
+### 12.2 Graph Schema & Representation
+* **NetworkX DiGraph In-Memory Engine ([`agent/app/engine/graph_builder.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/engine/graph_builder.py)):**
+  * **Standardized Node Types:** `FRAME`, `COMPONENT`, `COMPONENT_SET`, `INSTANCE`, `TEXT`, `VECTOR`, `IMAGE`, `OTHER`.
+  * **Relationship Edge Types:**
+    * `PARENT_OF`: Strict Figma hierarchy parent-child relationship (confidence: 1.0).
+    * `DEPENDS_ON`: Layout and positioning dependency (child to parent, or flow dependency).
+    * `ALIGNED_WITH`: Spatial alignment between siblings (top, left, center, etc.).
+    * `NEXT_TO`: Spatial adjacency in natural visual reading order with clearance gap.
+    * `CONTAINS`: Spatial bounding box containment.
+    * `INSTANCE_OF`: Instance to component archetype link.
+    * `SHARES_STYLE_WITH`: Identical visual styles / tokens between elements.
+    * `GROUPED_WITH`: Sibling membership in the same flex cluster or grid row/column.
+  * **Graph Serialization Schema ([`agent/app/models/geometry.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/models/geometry.py)):**
+    * Nodes: `[{ id, name, type, bounds, relativeBounds, inferredLayout, isComponent, componentId }]`
+    * Edges: `[{ source, target, type, confidence, metadata }]`
+    * Statistics: `nodeCount`, `edgeCount`, `edgeTypeDistribution`, `analysisWarnings`, `density`.
+
+### 12.3 API Integration & Endpoints
+* **FastAPI Service Endpoints ([`agent/app/api/routes/analysis.py`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/agent/app/api/routes/analysis.py)):**
+  * `POST /api/v1/geometry/analyze`: Deep geometric analysis (bounds, alignments, spacings, overlaps, grids).
+  * `POST /api/v1/layout/infer`: Deterministic layout pattern inference for all containers.
+  * `POST /api/v1/graph/generate`: Complete NetworkX relationship graph generation.
+  * `POST /api/v1/components/detect`: Repeated component and reusable pattern detection.
+  * `POST /api/v1/design/analyze`: Comprehensive design intelligence combining all engines.
+  * `GET /api/v1/capabilities`: Updated with operational flags for geometry, graph, layout, and component detection.
+* **Express Gateway Endpoints ([`backend/src/routes/aiRoutes.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/src/routes/aiRoutes.js)):**
+  * `POST /api/ai/geometry`: Proxies geometry analysis with MongoDB project lookup and caching.
+  * `POST /api/ai/layout`: Proxies layout inference.
+  * `POST /api/ai/graph`: Proxies relationship graph generation and persists to `DesignTree.metadata`.
+  * `POST /api/ai/components/detect`: Proxies component pattern detection.
+  * `POST /api/ai/analyze`: Unified gateway endpoint with automated MongoDB metadata updates.
+
+### 12.4 Performance Considerations
+* **Hierarchy-Scoped Comparisons:** Rather than performing naive $O(N^2)$ comparisons across thousands of nodes in a document, spatial analysis is scoped to immediate sibling groups within each container ($O(K^2)$ where $K \ll N$).
+* **Linear Structural Indexing:** Structural fingerprint hashing reduces candidate matching for repeated component detection from all-pairs comparison to direct hash bucket lookups.
+* **Scale Verification:** Benchmark tests verify that nested trees with >200 nodes execute graph construction in under 0.1s.
+
+### 12.5 Test Verification Results
+* **Python Pytest Suite (`agent/tests/`):**
+  * **23 passed** with 100% success rate across `test_geometry_engine.py`, `test_analysis.py`, `test_health.py`, and `test_security.py`.
+  * Covers bounding box extraction, relative coordinates, alignments, spacing, AABB overlaps, grid clusters, flex/card layout inference, repeated pattern similarity, NetworkX graph edges, and large tree performance.
+* **Node.js Client & Mock Integration Suite ([`backend/tests/pythonClient.test.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/tests/pythonClient.test.js)):**
+  * **23 passed** covering all `PythonServiceClient` methods (`analyzeGeometry`, `inferLayout`, `generateGraph`, `detectComponents`), secret masking, error mapping, and Express AI endpoints.
+* **Real Live Integration Suite ([`backend/tests/realIntegration.test.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/tests/realIntegration.test.js)):**
+  * **10 passed** with live Python Uvicorn service and Express gateway server running concurrently, validating all HTTP proxy routes, authentication verification, and data round-trips.
+* **Overall Backend Tests:**
+  * **77 passed** across 18 test suites in Node 22 native test runner (`node --test`).
+
+### 12.6 Known Limitations & Next Steps
+* **Semantic Agent Reasoning (Milestone 7):** While geometric alignment and spatial flow are fully deterministic, natural-language intent inference (e.g. distinguishing an arbitrary row from a complex pricing toggle) will integrate LLM/agent reasoning.
+* **LangGraph Orchestration & Code Synthesis (Milestone 8):** React 19 + Tailwind component code emission will consume the relationship graph and layout patterns established in this milestone.
