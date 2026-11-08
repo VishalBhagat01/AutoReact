@@ -33,5 +33,13 @@ backend/storage/
 logs/
 *.log
 
-
-ai-service/.venv
+# Python
+.venv/
+agent/.venv/
+ai-service/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
