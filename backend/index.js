@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import figmaRoutes from './src/routes/figmaRoutes.js';
 import projectRoutes from './src/routes/projectRoutes.js';
+import assetRoutes from './src/routes/assetRoutes.js';
 import { connectDB, isDbConnected, setupGracefulShutdown } from './src/config/database.js';
 import { errorHandler, notFoundHandler } from './src/middleware/errorHandler.js';
 
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Routes
 app.use('/api/figma', figmaRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/assets', assetRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

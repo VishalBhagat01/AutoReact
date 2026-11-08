@@ -17,6 +17,12 @@ export const extractStyles = (node) => {
     styles.colors = colors;
   }
 
+  // Image Fills
+  const images = extractImages(node);
+  if (images.length > 0) {
+    styles.images = images;
+  }
+
   // Stroke/Border
   const stroke = extractStroke(node);
   if (stroke) {
@@ -79,6 +85,25 @@ const extractColors = (node) => {
         opacity: color.a || 1,
       };
     });
+};
+
+/**
+ * Extract image fills from node
+ * @param {Object} node - Figma node
+ * @returns {Array} Array of image fill objects
+ */
+export const extractImages = (node) => {
+  if (!node.fills || !Array.isArray(node.fills)) return [];
+
+  return node.fills
+    .filter(fill => fill.type === 'IMAGE' && fill.visible !== false)
+    .map(fill => ({
+      type: 'IMAGE',
+      scaleMode: fill.scaleMode || 'FILL',
+      imageRef: fill.imageRef || null,
+      opacity: fill.opacity !== undefined ? fill.opacity : 1,
+      ...(fill.blendMode && { blendMode: normalizeBlendMode(fill.blendMode) }),
+    }));
 };
 
 /**

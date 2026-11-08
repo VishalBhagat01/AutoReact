@@ -25,6 +25,13 @@ build/
 # OS
 Thumbs.db
 
+# Storage
+storage/
+backend/storage/
+
 # Logs
 logs/
 *.log
+
+
+ai-service/.venv

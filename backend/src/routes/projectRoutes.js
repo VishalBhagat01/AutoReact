@@ -8,6 +8,7 @@ import {
   getProjectDesign,
   getProjectTree,
   getProjectComponents,
+  getProjectAssets,
 } from '../controllers/projectController.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
 
@@ -20,10 +21,11 @@ router.get('/:id', validateObjectId('id'), getProjectById);
 router.patch('/:id', validateObjectId('id'), updateProject);
 router.delete('/:id', validateObjectId('id'), deleteProject);
 
-// Project Design & Components
+// Project Design & Components & Assets
 router.get('/:id/design', validateObjectId('id'), getProjectDesign);
 router.get('/:id/tree', validateObjectId('id'), getProjectTree);
 router.get('/:id/components', validateObjectId('id'), getProjectComponents);
+router.get('/:id/assets', validateObjectId('id'), getProjectAssets);
 
 export default router;
 

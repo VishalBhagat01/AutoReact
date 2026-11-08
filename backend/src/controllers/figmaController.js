@@ -2,7 +2,13 @@ import {
   fetchFigmaFile,
   parseDesignTree,
   parseFigmaUrl,
+  getSelectiveNodes,
 } from '../services/figmaService.js';
+import {
+  exportAndDownloadAssets,
+  getAssetFilePath,
+  identifyAssetCandidates,
+} from '../services/assetService.js';
 import { Project } from '../models/Project.js';
 import { DesignTree } from '../models/DesignTree.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -93,7 +99,7 @@ export const importFigmaFile = async (req, res, next) => {
               lastImportedAt: new Date(),
             },
           },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
+          { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
 
         projectId = project._id;
@@ -117,7 +123,7 @@ export const importFigmaFile = async (req, res, next) => {
               },
             },
           },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
+          { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
         console.log(`💾 Persisted design tree for project: ${project._id}`);
       } catch (dbError) {
@@ -155,4 +161,139 @@ export const healthCheck = (req, res) => {
     message: 'Figma API is operational',
     timestamp: new Date().toISOString(),
   });
+};
+
+/**
+ * Retrieve selective nodes from Figma document
+ * POST /api/figma/nodes
+ * Body: { url?: string, fileKey?: string, nodeIds: string[] | string }
+ */
+export const getSelectiveNodesController = async (req, res, next) => {
+  try {
+    const { fileKey, nodeIds } = req.selectiveNodesMeta;
+    const figmaToken = process.env.FIGMA_TOKEN;
+
+    if (!figmaToken) {
+      throw new AppError(
+        'Figma token not configured. Please set FIGMA_TOKEN in environment variables.',
+        500,
+        'MISSING_FIGMA_TOKEN'
+      );
+    }
+
+    console.log(`📥 Fetching selective nodes [${nodeIds.join(', ')}] for file (${fileKey})...`);
+    const result = await getSelectiveNodes(fileKey, nodeIds, figmaToken, req.body.options || {});
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        fileKey: result.fileKey,
+        fileName: result.fileName,
+        fileVersion: result.fileVersion,
+        nodes: result.nodes,
+        missingNodeIds: result.missingNodeIds,
+        totalFound: result.totalFound,
+        totalRequested: result.totalRequested,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Export and store visual assets for Figma nodes
+ * POST /api/figma/assets/export
+ * Body: { url?: string, fileKey?: string, nodeIds?: string[], format?: 'png' | 'svg' | 'jpg', scale?: number, projectId?: string }
+ */
+export const exportAssetsController = async (req, res, next) => {
+  try {
+    const { fileKey, nodeIds, format, scale, projectId } = req.assetExportMeta;
+    const figmaToken = process.env.FIGMA_TOKEN;
+
+    if (!figmaToken) {
+      throw new AppError(
+        'Figma token not configured. Please set FIGMA_TOKEN in environment variables.',
+        500,
+        'MISSING_FIGMA_TOKEN'
+      );
+    }
+
+    let targetIds = nodeIds;
+
+    // If no node IDs were explicitly specified, attempt to discover asset candidates from the design tree
+    if (!targetIds || targetIds.length === 0) {
+      console.log(`🔍 No node IDs provided for asset export. Scanning design tree for candidates...`);
+      let tree = null;
+      if (isDbConnected()) {
+        const cachedTree = await DesignTree.findOne({ figmaFileKey: fileKey }).lean();
+        if (cachedTree && cachedTree.pages) {
+          tree = cachedTree.pages;
+        }
+      }
+
+      if (!tree) {
+        const rawData = await fetchFigmaFile(fileKey, figmaToken);
+        const parsed = parseDesignTree(rawData);
+        tree = parsed.pages;
+      }
+
+      const candidates = identifyAssetCandidates(tree);
+      targetIds = candidates.map(c => c.nodeId);
+      console.log(`🔍 Discovered ${targetIds.length} asset candidate nodes in design tree.`);
+    }
+
+    if (targetIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          fileKey,
+          exportedCount: 0,
+          assets: [],
+          failedNodeIds: [],
+          message: 'No asset candidate nodes found to export.',
+        },
+      });
+    }
+
+    console.log(`🎨 Exporting ${targetIds.length} assets (${format.toUpperCase()} @ ${scale}x) for file (${fileKey})...`);
+    const result = await exportAndDownloadAssets({
+      fileKey,
+      nodeIds: targetIds,
+      format,
+      scale,
+      projectId,
+      token: figmaToken,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        fileKey: result.fileKey,
+        exportedCount: result.exportedCount,
+        assets: result.assets,
+        failedNodeIds: result.failedNodeIds,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Serve stored asset files directly with path traversal protection
+ * GET /api/assets/:fileKey/:filename
+ */
+export const serveAssetController = async (req, res, next) => {
+  try {
+    const { fileKey, filename } = req.params;
+    const { filePath, mimeType, fileSize } = await getAssetFilePath(fileKey, filename);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', fileSize);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    return res.sendFile(filePath);
+  } catch (error) {
+    return next(error);
+  }
 };

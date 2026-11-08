@@ -9,6 +9,11 @@
  * @returns {boolean} True if node should be filtered out
  */
 export const isDecorativeNode = (node) => {
+  // Nodes with visible image fills are visual assets, not decorative noise
+  if (node.fills && Array.isArray(node.fills) && node.fills.some(f => f.type === 'IMAGE' && f.visible !== false)) {
+    return false;
+  }
+
   // Filter rectangles with no semantic value
   if (node.type === 'RECTANGLE') {
     const hasNoChildren = !node.children || node.children.length === 0;

@@ -405,3 +405,44 @@ To add AI and design intelligence without replacing the existing Node.js platfor
 ### 9.4 Verification & Test Results
 * Implemented 19 new tests in `models.test.js` and `projectsApi.test.js`.
 * All **63 unit and integration tests passing** across 21 test suites in Node 22 native test runner.
+
+---
+
+## 10. Milestone Completed: Figma Selective Node Fetching & Asset Extraction (Step 4)
+
+### 10.1 Selective Node Retrieval Engine
+* **Figma URL & Node ID Normalization:**
+  * Supported standard and modern Figma URLs (`/file/:key`, `/design/:key`, `/proto/:key`) with query parameters containing `node-id`.
+  * Normalized node ID representations across URL formats (`1-23`, `1%3A23`, `1:23`).
+* **Selective Node Fetching Service ([`backend/src/services/figmaService.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/services/figmaService.js)):**
+  * `getSelectiveNodes(fileKey, nodeIds, token, options)`: Queries `GET /v1/files/:fileKey/nodes?ids=...` without retrieving the full multi-megabyte document.
+  * Processes each retrieved node through the complete normalization and semantic pipeline (`processNode` for layout, bounds, styles, and text; `analyzeSemanticTree` for semantic classification).
+  * Preserves native Figma component metadata (`nodeEntry.components`).
+  * Gracefully identifies and reports missing or deleted nodes in `missingNodeIds`.
+* **Selective Node API Endpoint:**
+  * `POST /api/figma/nodes`: Validates requests (`validateSelectiveNodesRequest`), accepts either full URLs with `node-id` or explicit `fileKey` + `nodeIds` arrays, and returns normalized nodes matching the Design AST contract.
+
+### 10.2 Visual Asset Extraction & Management Engine
+* **Asset Service Architecture ([`backend/src/services/assetService.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/services/assetService.js)):**
+  * **Candidate Detection (`identifyAssetCandidates`):** Recursively traverses design trees to detect raster image fills (`fills` of type `IMAGE` or `styles.images`), vector shapes (`VECTOR`, `STAR`, `POLYGON`, `LINE`, `BOOLEAN_OPERATION`), and icon nodes (semantic type `'icon'` or matching icon naming conventions).
+  * **Figma Image Export (`exportFigmaImages`):** Invokes `GET /v1/images/:fileKey` supporting PNG, SVG, JPG, and PDF at configurable export scales (0.01x to 4x). Implements HTTP 429 rate-limit handling with exponential backoff and `Retry-After` adherence.
+  * **Image Fill URLs (`fetchFigmaImageFills`):** Queries `GET /v1/files/:fileKey/images` mapping Figma image hashes (`imageRef`) to direct S3 download URLs.
+  * **Secure Asset Downloader (`downloadAsset`):** Downloads remote binaries with a 25MB maximum size limit, 15-second timeout, SHA-256 checksum computation, and MIME type extraction.
+  * **Local Disk Storage (`saveAssetToDisk`):** Configurable storage directory via `ASSET_STORAGE_DIR` (defaults to `storage/assets`). Generates cross-platform safe filenames (`sanitizeNodeId` converting colons/semicolons to hyphens/underscores).
+  * **Path Traversal Protection (`isSafePath`, `getAssetFilePath`):** Strictly verifies that all target filesystem paths reside within the storage directory, rejecting `../` and illegal traversal attempts with 400 Bad Request.
+  * **Design Tree Asset Attachment (`attachAssetsToTree`):** Attaches resolved asset metadata (`assetId`, `assetType`, `format`, `publicUrl`, `scale`, `dimensions`, `fileSize`) directly onto matching nodes in the normalized design AST.
+
+### 10.3 Persistence & Asset Serving APIs
+* **Mongoose Asset Model ([`backend/src/models/Asset.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/models/Asset.js)):**
+  * Persists asset metadata without storing binary blobs in MongoDB (`projectId`, `figmaFileKey`, `figmaNodeId`, `assetType`, `format`, `storagePath`, `publicUrl`, `dimensions`, `exportScale`, `imageRef`, `fileSize`, `mimeType`, `checksum`).
+  * Compound unique index: `{ figmaFileKey: 1, figmaNodeId: 1, format: 1, exportScale: 1 }`.
+* **New Endpoints:**
+  * `POST /api/figma/assets/export`: Exports, downloads, saves to disk, and persists visual assets for specified node IDs or auto-detected candidates.
+  * `GET /api/assets/:fileKey/:filename`: Serves static asset files directly with Content-Type headers, Cache-Control caching, and path traversal validation.
+  * `GET /api/projects/:id/assets`: Lists stored visual assets for a given project.
+
+### 10.4 Verification & Test Results
+* Implemented 22 new tests across two dedicated test suites:
+  * [`backend/tests/selectiveNodes.test.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/tests/selectiveNodes.test.js) (9 tests): Validates selective node retrieval, node ID normalization, missing node reporting, and API error/success responses.
+  * [`backend/tests/assets.test.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/tests/assets.test.js) (13 tests): Validates candidate detection, path traversal blocks, safe disk writing, Mongoose uniqueness constraints, remote downloading, tree asset attachment, asset export API, static serving, and project asset listing.
+* **All 85 automated tests passing** across 31 test suites with zero failures in Node 22 native test runner (`npm test`).

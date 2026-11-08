@@ -183,6 +183,222 @@ export const fetchFigmaNodes = async (fileKey, nodeIds, token, options = {}) => 
 };
 
 /**
+ * Retrieve and normalize selective Figma nodes without downloading the entire file
+ * Supports FRAME, COMPONENT, COMPONENT_SET, INSTANCE, and all container nodes
+ * 
+ * @param {string} fileKey - Figma file key
+ * @param {string|string[]} nodeIds - Single node ID or array of node IDs
+ * @param {string} [token] - Figma API token
+ * @param {Object} [options] - Normalization & request options
+ * @returns {Promise<Object>} Normalized nodes and retrieval metadata
+ */
+export const getSelectiveNodes = async (fileKey, nodeIds, token = process.env.FIGMA_TOKEN, options = {}) => {
+  if (!fileKey) {
+    throw new AppError('File key is required to fetch Figma nodes', 400, 'MISSING_FILE_KEY');
+  }
+
+  if (!nodeIds || (Array.isArray(nodeIds) && nodeIds.length === 0)) {
+    throw new AppError('Node ID(s) required to fetch specific Figma nodes', 400, 'MISSING_NODE_IDS');
+  }
+
+  const rawIdList = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
+  const normalizedIds = rawIdList
+    .map(id => (typeof id === 'string' ? normalizeNodeId(id.trim()) : id))
+    .filter(Boolean);
+
+  if (normalizedIds.length === 0) {
+    throw new AppError('No valid node IDs provided', 400, 'INVALID_NODE_IDS');
+  }
+
+  const rawData = await fetchFigmaNodes(fileKey, normalizedIds, token, options);
+
+  const {
+    includeDecorative = false,
+    includeSeparators = false,
+    includeSemantics = true,
+  } = options;
+
+  const nodesMap = rawData.nodes || {};
+  const processedNodes = [];
+  const processedNodesById = {};
+  const missingNodeIds = [];
+
+  for (const id of normalizedIds) {
+    const nodeEntry = nodesMap[id];
+    if (!nodeEntry || !nodeEntry.document) {
+      missingNodeIds.push(id);
+      continue;
+    }
+
+    const processed = processNode(nodeEntry.document, {
+      includeDecorative,
+      includeSeparators,
+      includeSemantics,
+      includeLayout: true,
+      includeStyles: true,
+    });
+
+    if (processed) {
+      const finalNode = includeSemantics ? analyzeSemanticTree(processed) : processed;
+
+      // Preserve component metadata if available from Figma
+      if (nodeEntry.components && Object.keys(nodeEntry.components).length > 0) {
+        finalNode.componentMetadata = nodeEntry.components;
+      }
+
+      processedNodes.push(finalNode);
+      processedNodesById[id] = finalNode;
+    } else {
+      missingNodeIds.push(id);
+    }
+  }
+
+  return {
+    fileKey,
+    fileName: rawData.name || 'Figma Design',
+    fileVersion: rawData.version || '1.0',
+    nodes: processedNodes,
+    nodesById: processedNodesById,
+    missingNodeIds,
+    totalFound: processedNodes.length,
+    totalRequested: normalizedIds.length,
+  };
+};
+
+/**
+ * Export visual assets (PNG, SVG, JPG, PDF) for selected nodes via Figma images API
+ * Includes automatic retry with exponential backoff on HTTP 429
+ * 
+ * @param {string} fileKey - Figma file key
+ * @param {string|string[]} nodeIds - Single or array of node IDs
+ * @param {Object} [options] - Export options (format, scale, svgIncludeId, etc.)
+ * @param {string} [token] - Figma API token
+ * @returns {Promise<Object>} Object mapping nodeId -> image download URL or null
+ */
+export const exportFigmaImages = async (fileKey, nodeIds, options = {}, token = process.env.FIGMA_TOKEN) => {
+  if (!fileKey) {
+    throw new AppError('File key is required to export Figma images', 400, 'MISSING_FILE_KEY');
+  }
+
+  if (!nodeIds || (Array.isArray(nodeIds) && nodeIds.length === 0)) {
+    throw new AppError('Node ID(s) required to export Figma images', 400, 'MISSING_NODE_IDS');
+  }
+
+  if (!token) {
+    throw new AppError(
+      'Figma token not configured. Please set FIGMA_TOKEN in environment variables.',
+      500,
+      'MISSING_FIGMA_TOKEN'
+    );
+  }
+
+  const rawIdList = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
+  const normalizedIds = rawIdList
+    .map(id => (typeof id === 'string' ? normalizeNodeId(id.trim()) : id))
+    .filter(Boolean);
+
+  const {
+    format = 'png',
+    scale = 1,
+    svgIncludeId = true,
+    svgSimplifyStroke = true,
+    timeout = 30000,
+    maxRetries = 3,
+  } = options;
+
+  const validFormats = ['png', 'svg', 'jpg', 'pdf'];
+  if (!validFormats.includes(format.toLowerCase())) {
+    throw new AppError(
+      `Unsupported export format: ${format}. Supported formats: ${validFormats.join(', ')}`,
+      400,
+      'INVALID_EXPORT_FORMAT'
+    );
+  }
+
+  const idsParam = normalizedIds.join(',');
+  const params = {
+    ids: idsParam,
+    format: format.toLowerCase(),
+    scale: Math.min(Math.max(scale, 0.01), 4),
+  };
+
+  if (format.toLowerCase() === 'svg') {
+    if (svgIncludeId) params.svg_include_id = true;
+    if (svgSimplifyStroke) params.svg_simplify_stroke = true;
+  }
+
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      const response = await axios.get(`${FIGMA_API_URL}/images/${fileKey}`, {
+        params,
+        headers: {
+          'X-Figma-Token': token,
+        },
+        timeout,
+      });
+
+      return {
+        err: response.data.err || null,
+        images: response.data.images || {},
+      };
+    } catch (error) {
+      if (error.response && error.response.status === 429 && attempt < maxRetries) {
+        attempt++;
+        const retryAfterSec = parseInt(error.response.headers?.['retry-after'], 10) || Math.pow(2, attempt);
+        const waitMs = retryAfterSec * 1000;
+        console.warn(`[exportFigmaImages] 429 Rate limited. Retrying after ${retryAfterSec}s (attempt ${attempt}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue;
+      }
+      handleFigmaApiError(error, `Failed to export Figma images for file (${fileKey})`);
+    }
+  }
+};
+
+/**
+ * Fetch image fill URLs for an entire Figma file (maps imageRef to temporary S3 URL)
+ * GET /v1/files/:fileKey/images
+ * 
+ * @param {string} fileKey - Figma file key
+ * @param {string} [token] - Figma API token
+ * @param {Object} [options] - Request options
+ * @returns {Promise<Object>} Map of imageRef -> URL
+ */
+export const fetchFigmaImageFills = async (fileKey, token = process.env.FIGMA_TOKEN, options = {}) => {
+  if (!fileKey) {
+    throw new AppError('File key is required to fetch Figma image fills', 400, 'MISSING_FILE_KEY');
+  }
+
+  if (!token) {
+    throw new AppError(
+      'Figma token not configured. Please set FIGMA_TOKEN in environment variables.',
+      500,
+      'MISSING_FIGMA_TOKEN'
+    );
+  }
+
+  const { timeout = 30000 } = options;
+
+  try {
+    const response = await axios.get(`${FIGMA_API_URL}/files/${fileKey}/images`, {
+      headers: {
+        'X-Figma-Token': token,
+      },
+      timeout,
+    });
+
+    return {
+      err: response.data.err || null,
+      meta: response.data.meta || {},
+      images: response.data.meta?.images || {},
+    };
+  } catch (error) {
+    handleFigmaApiError(error, `Failed to fetch Figma image fills for file (${fileKey})`);
+  }
+};
+
+/**
  * Parse Figma JSON and build enhanced tree with semantic classification
  * Pipeline: Raw Nodes -> Filtering -> Style Extraction -> Layout Extraction -> Semantic Classification
  * 

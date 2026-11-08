@@ -1,6 +1,7 @@
 import { Project } from '../models/Project.js';
 import { DesignTree } from '../models/DesignTree.js';
 import { GeneratedCode } from '../models/GeneratedCode.js';
+import { Asset } from '../models/Asset.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
@@ -310,6 +311,38 @@ export const getProjectComponents = async (req, res, next) => {
       success: true,
       count: components.length,
       data: components,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Get visual assets associated with a project
+ * GET /api/projects/:id/assets
+ */
+export const getProjectAssets = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const project = await Project.findById(id).lean();
+    if (!project) {
+      throw new AppError(`Project not found with ID: '${id}'`, 404, 'PROJECT_NOT_FOUND');
+    }
+
+    const assets = await Asset.find({
+      $or: [
+        { projectId: id },
+        { figmaFileKey: project.figmaFileKey },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: assets.length,
+      data: assets,
     });
   } catch (error) {
     return next(error);
