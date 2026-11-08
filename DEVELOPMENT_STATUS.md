@@ -446,3 +446,55 @@ To add AI and design intelligence without replacing the existing Node.js platfor
   * [`backend/tests/selectiveNodes.test.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/tests/selectiveNodes.test.js) (9 tests): Validates selective node retrieval, node ID normalization, missing node reporting, and API error/success responses.
   * [`backend/tests/assets.test.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/tests/assets.test.js) (13 tests): Validates candidate detection, path traversal blocks, safe disk writing, Mongoose uniqueness constraints, remote downloading, tree asset attachment, asset export API, static serving, and project asset listing.
 * **All 85 automated tests passing** across 31 test suites with zero failures in Node 22 native test runner (`npm test`).
+
+
+---
+
+## 11. Milestone Completed: Python FastAPI AI Microservice Setup (Step 5)
+
+### 11.1 Python Service Architecture
+* **Directory Structure (`agent/` and mirrored `ai-service/`):**
+  * `app/main.py`: FastAPI application initialization, lifespan lifecycle management, CORS middleware, centralized exception handling.
+  * `app/core/config.py`: Pydantic BaseSettings loading from `.env` and environment variables (`HOST`, `PORT`, `SERVICE_SECRET`, `ENVIRONMENT`, `LOG_LEVEL`).
+  * `app/core/logging.py`: Structured JSON and standard loggers with secret masking.
+  * `app/core/security.py`: Internal service authentication dependency validating `X-Service-Secret` and `Authorization: Bearer <secret>` using constant-time comparison (`hmac.compare_digest`).
+  * `app/models/design.py`: Pydantic Design AST schema (`NormalizedNode`, `Bounds`, `Layout`, `Styles`, `Typography`, `Padding`).
+  * `app/models/requests.py`: `DesignAnalysisRequest` model supporting root trees, canvas pages, and selective nodes.
+  * `app/models/responses.py`: Standardized response envelopes (`HealthResponse`, `CapabilitiesResponse`, `DesignAnalysisResponse`, `ErrorResponse`).
+  * `app/services/design_service.py`: `DesignService` computing structural node metrics (total nodes, container types, text nodes, vector nodes, tree depth, layout/styles presence) and reporting capabilities execution status.
+  * `app/api/routes/health.py`: Health checks (`GET /health`, `GET /api/v1/health`) and capabilities endpoint (`GET /api/v1/capabilities`).
+  * `app/api/routes/analysis.py`: Protected analysis endpoint (`POST /api/v1/design/analyze`).
+
+### 11.2 Node.js to Python Communication Client
+* **Reusable Service Client ([`backend/src/services/pythonServiceClient.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/src/services/pythonServiceClient.js)):**
+  * Reads `PYTHON_SERVICE_URL` (with fallback to `AI_SERVICE_URL` and `http://127.0.0.1:8000`).
+  * Transmits internal authentication header `X-Service-Secret`.
+  * Implements exponential backoff retries for transient connection errors (`ECONNREFUSED`, `ETIMEDOUT`, 502, 503, 504).
+  * Automatically masks secrets from logs and exceptions (`maskSecret`).
+  * Translates HTTP errors into normalized Express 5 `AppError` instances (503 Service Unavailable on downtime, 504 Gateway Timeout, 422 Validation Error).
+* **Express Gateway Endpoints ([`backend/src/routes/aiRoutes.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/src/routes/aiRoutes.js)):**
+  * `GET /api/ai/health`: Proxies Python microservice operational health.
+  * `GET /api/ai/capabilities`: Proxies operational vs pending processing capabilities.
+  * `POST /api/ai/analyze`: Accepts design payload or MongoDB `projectId`, forwards AST to FastAPI, and returns structured analysis.
+
+### 11.3 Capabilities Separation & Boundaries
+* **Strict Ownership Maintained:**
+  * Node.js owns user auth, Figma API tokens, Figma REST calls, MongoDB persistence, asset caching, and frontend communication.
+  * Python owns AST validation, structural inspection, and future geometry analysis and code synthesis.
+  * Python does not connect to MongoDB; design data is passed via HTTP JSON payloads.
+* **Capabilities Contract (`GET /api/v1/capabilities`):**
+  * **Operational:** `health_check`, `internal_service_authentication`, `design_payload_validation`, `design_metadata_extraction`, `node_counting`, `structural_inspection`.
+  * **Pending (Not Advertised as Operational):** `geometry_spatial_analysis`, `semantic_reasoning`, `relationship_graph`, `langgraph_orchestration`, `llm_code_generation`, `react_code_synthesis`, `visual_validation`.
+
+### 11.4 Docker & Containerization
+* `agent/Dockerfile`: Python 3.11-slim container with health check, non-root environment variables, and Uvicorn server.
+* `backend/Dockerfile`: Node.js 22-alpine container with clean production build.
+* `docker-compose.yml`: Multi-container orchestration linking `agent`, `backend`, and `mongo` on an isolated internal network (`reagmat-network`).
+
+### 11.5 Test Verification Results
+* **Python Microservice Tests (`agent/tests/`):**
+  * **9 passed** with pytest (`test_root_health`, `test_v1_health`, `test_capabilities_endpoint`, `test_valid_analysis_request`, `test_selective_nodes_analysis`, `test_invalid_node_payload_fails_validation`, `test_missing_authentication_header_rejected`, `test_incorrect_authentication_secret_rejected`, `test_bearer_authorization_header_accepted`).
+* **Node.js Client & Gateway Tests ([`backend/tests/pythonClient.test.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/tests/pythonClient.test.js)):**
+  * **15 passed** with Node 22 native test runner testing client initialization, secret masking, downtime detection, transient retries, mock server contract verification, and Express AI endpoints.
+* **Live Integration Tests ([`backend/tests/realIntegration.test.js`](file:///c:/Users/TANYA%20NARANG/AutoReact/AutoReact/backend/tests/realIntegration.test.js)):**
+  * **7 passed** with both the live Python Uvicorn process and live Node.js Express server running concurrently, validating full round-trip HTTP requests, authentication enforcement, Pydantic validation rejection, and AST analysis delivery.
