@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import figmaRoutes from './src/routes/figmaRoutes.js';
+import projectRoutes from './src/routes/projectRoutes.js';
+import { connectDB, isDbConnected, setupGracefulShutdown } from './src/config/database.js';
 import { errorHandler, notFoundHandler } from './src/middleware/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,12 +25,14 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Routes
 app.use('/api/figma', figmaRoutes);
+app.use('/api/projects', projectRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     message: 'Figma Design Parser API is running',
+    database: isDbConnected() ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString(),
   });
 });
@@ -39,12 +43,25 @@ app.use(notFoundHandler);
 // Centralized error handling middleware
 app.use(errorHandler);
 
-// Only listen if executed directly as entrypoint (not when imported for tests)
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
-if (isMain) {
-  app.listen(PORT, () => {
+// Connect to MongoDB and start listening if executed directly
+export const startServer = async () => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('Initial MongoDB connection error:', err.message);
+  }
+
+  const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
+
+  setupGracefulShutdown(server);
+  return server;
+};
+
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain && process.env.NODE_ENV !== 'test') {
+  startServer();
 }
 
 export default app;

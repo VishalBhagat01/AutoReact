@@ -213,14 +213,9 @@ Target Extended State:
 | **Semantic Classification** | ✅ Unified & Recovered | Modular weighted engine restored, extended (Avatar, Badge, Modal, Hero, List), and unified |
 | **Figma URL Parser** | ✅ Robust ESM | Supports /file/, /design/, /proto/, node-id query params (colon, hyphen, url-encoded) |
 | **Backend Error Handling** | ✅ Express 5 Ready | Centralized errorHandler, validator middleware, Figma API 401/403/404/429/timeout mappings |
-| **Backend Test Suite** | ✅ 44/44 Passing | Native Node 22 test runner covering URLs, Semantics, Node Processing, API endpoints |
-| **Layout to Tailwind Class Mapping** | ⚠️ Partial | Utility exists in `layoutExtractor.js` & `constants.js`, ready for Python code gen |
-| **Geometry Utilities** | ⚠️ Partial | Bounding boxes, centering, alignment; spatial clustering to be handled in Python AI service |
-| **Figma Image / SVG Asset Export** | ❌ Missing | Next phase: add Figma image download pipeline |
-| **Design-to-React Code Generation** | ❌ Missing | Next phase: Python FastAPI AI microservice integration |
-| **Full App vs Component Extraction** | ❌ Missing | Target of Python AI code generator (Phases 3-4) |
-| **Python + FastAPI AI Service** | ❌ Missing | Target of Phase 2 |
-| **MongoDB / Mongoose Persistence** | ❌ Missing | Mongoose installed; target of Phase 1 persistence setup |
+| **MongoDB / Mongoose Persistence** | ✅ Implemented | Centralized database.js, Project, DesignTree, and GeneratedCode schemas with indexes |
+| **Project & Design REST APIs** | ✅ Implemented | Full CRUD, design/tree/components retrieval endpoints, caching |
+| **Backend Test Suite** | ✅ 63/63 Passing | Native Node 22 test runner covering Models, CRUD, Caching, URLs, Semantics, Node Processing |
 | **Visual Canvas / Code Preview UI** | ❌ Missing | Target of Phase 5 |
 | **Environment Examples** | ✅ Completed | `.env.example` created in both `backend` and `frontend` |
 
@@ -370,3 +365,43 @@ To add AI and design intelligence without replacing the existing Node.js platfor
    * Resolved a path-resolution issue in `backend/index.js` by resolving `.env` relative to the server script location (`path.resolve(__dirname, '.env')`), ensuring environment variables are always loaded regardless of the execution working directory. Created `.env.example` in both `backend` and `frontend`.
 5. **Node.js Native Automated Test Suite:**
    * Implemented 44 automated tests across 5 test suites (`url.test.js`, `semantic.test.js`, `nodeProcessor.test.js`, `figmaService.test.js`, `apiErrorHandling.test.js`). 100% passing.
+
+
+---
+
+## 9. Milestone Completed: MongoDB Integration & Data Persistence (Step 3)
+
+### 9.1 Database Architecture
+* **Connection Manager:** [`backend/src/config/database.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/config/database.js)
+  * Uses Mongoose connection pooling and handles connection, error, and disconnection events.
+  * Connects prior to accepting incoming HTTP requests.
+  * Handles graceful shutdowns on `SIGINT` and `SIGTERM` signals, closing the HTTP server and Mongoose connection.
+* **Environment Variable:** `MONGODB_URI` configured in `.env` and `.env.example` with fallback to `mongodb://localhost:27017/reagmat`.
+
+### 9.2 Schemas & Data Models
+1. **`Project` ([`backend/src/models/Project.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/models/Project.js)):**
+   * Stores imported project records (`name`, `figmaFileKey` [unique], `figmaFileUrl`, `figmaVersion`, `thumbnailUrl`, `status`, `settings`, `lastImportedAt`).
+2. **`DesignTree` ([`backend/src/models/DesignTree.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/models/DesignTree.js)):**
+   * Stores normalized AST design trees (`projectId` [ref], `figmaFileKey`, `schemaVersion`, `totalNodeCount`, `pages`, `normalizedTree`, `semanticTree`, `metadata`).
+   * One-to-one relationship with `Project` enforcing document size considerations.
+3. **`GeneratedCode` ([`backend/src/models/GeneratedCode.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/models/GeneratedCode.js)):**
+   * Prepares persistence for generated React code artifacts (`projectId` [ref], `generationMode`, `selectedNodeIds`, `artifactName`, `artifactType`, `fileManifest`, `storageLocation`, `generationStatus`, `validationStatus`, `metadata`).
+   * Follows best practice of storing file locations on disk/storage rather than storing large binary archives in MongoDB documents.
+
+### 9.3 Persistence & Design Retrieval APIs
+* **Project CRUD:**
+  * `POST /api/projects`: Create project with unique key validation.
+  * `GET /api/projects`: List projects with pagination (`page`, `limit`), search, and status filtering.
+  * `GET /api/projects/:id`: Get project by MongoDB ObjectId.
+  * `PATCH /api/projects/:id`: Update project metadata and settings.
+  * `DELETE /api/projects/:id`: Delete project with cascading cleanup of associated `DesignTree` and `GeneratedCode` records.
+* **Design & Component Retrieval:**
+  * `GET /api/projects/:id/design`: Returns complete project details and full DesignTree.
+  * `GET /api/projects/:id/tree`: Returns normalized tree formatted specifically for frontend `treeStore.js`.
+  * `GET /api/projects/:id/components`: Recursively scans the design tree to return all native Figma components and semantically classified component blocks (Buttons, Cards, Navbars, FormFields, etc.).
+* **Figma Import Caching:**
+  * Updated `POST /api/figma/import` to check MongoDB before fetching from Figma API. If cached design exists and `refresh !== true`, returns cached design immediately, eliminating redundant Figma API calls.
+
+### 9.4 Verification & Test Results
+* Implemented 19 new tests in `models.test.js` and `projectsApi.test.js`.
+* All **63 unit and integration tests passing** across 21 test suites in Node 22 native test runner.
