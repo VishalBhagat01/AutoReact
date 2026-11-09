@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import app from '../index.js';
@@ -20,9 +21,18 @@ describe('Real Live Integration: Node.js Express Gateway <-> Real Python FastAPI
   let client;
 
   before(async () => {
-    // 1. Launch real Python FastAPI service via uvicorn in agent directory
-    const pythonExe = path.join(rootDir, 'agent', '.venv', 'Scripts', 'python.exe');
-    const agentDir = path.join(rootDir, 'agent');
+    // 1. Launch real Python FastAPI service via uvicorn in ai-service or agent directory
+    const candidateDirs = ['ai-service', 'agent'];
+    let agentDir = path.join(rootDir, 'ai-service');
+    let pythonExe = path.join(agentDir, '.venv', 'Scripts', 'python.exe');
+    for (const dir of candidateDirs) {
+      const pExe = path.join(rootDir, dir, '.venv', 'Scripts', 'python.exe');
+      if (fs.existsSync(pExe)) {
+        agentDir = path.join(rootDir, dir);
+        pythonExe = pExe;
+        break;
+      }
+    }
 
     await new Promise((resolve, reject) => {
       pythonProcess = spawn(

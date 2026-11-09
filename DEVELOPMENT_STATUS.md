@@ -573,5 +573,352 @@ To add AI and design intelligence without replacing the existing Node.js platfor
   * **77 passed** across 18 test suites in Node 22 native test runner (`node --test`).
 
 ### 12.6 Known Limitations & Next Steps
-* **Semantic Agent Reasoning (Milestone 7):** While geometric alignment and spatial flow are fully deterministic, natural-language intent inference (e.g. distinguishing an arbitrary row from a complex pricing toggle) will integrate LLM/agent reasoning.
-* **LangGraph Orchestration & Code Synthesis (Milestone 8):** React 19 + Tailwind component code emission will consume the relationship graph and layout patterns established in this milestone.
+* **Semantic Agent Reasoning & Canonical IR (Milestone 7):** While geometric alignment and spatial flow are fully deterministic, code generation requires a canonical, versioned intermediate representation bridging Figma raw data, geometry graphs, and design tokens into a single unified schema.
+* **LangGraph Orchestration & Code Synthesis (Milestone 8):** React 19 + Tailwind component code emission will consume the canonical Design IR established in Milestone 7.
+
+---
+
+## 13. Milestone Completed: Unified, Versioned Design Intermediate Representation (Design IR v1.0.0) (Step 7)
+
+### 13.1 Architectural Overview & Single Source of Truth
+In Step 7, Reagmat established a canonical **Design Intermediate Representation (Design IR v1.0.0)** serving as the single source of truth for both:
+1. **Complete React Application Synthesis:** Converting entire multi-page or multi-screen Figma files into cohesive React applications.
+2. **Selective Component Generation:** Converting isolated frames, sections, or individual Figma components into modular, reusable React components.
+
+Both generation modes consume the **exact same canonical IR schema**. No separate parsing pipelines exist.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          FIGMA REST API / IMPORT                            │
+│                  Full Files (/files/:key) or Selective Nodes                │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        CANONICAL DESIGN IR BUILDER                          │
+│                          (backend/src/ir/builder.js)                        │
+│  - Semantic Resolution (17 canonical types with evidence & confidence)      │
+│  - Design Tokens Extractor (palette, typography, spacing, radii, shadows)   │
+│  - Component & Variant Extractor (native Figma, sets, and inferred)        │
+│  - Asset Catalog & Bounding Box Normalization                               │
+└──────────────────────┬───────────────────────────────┬──────────────────────┘
+                       │                               │
+                       ▼                               ▼
+       ┌───────────────────────────────┐   ┌───────────────────────────────┐
+       │   FastAPI AI Service Enrich   │   │     Validation & Migration    │
+       │     (POST /api/v1/ir/enrich)  │   │  - Structural & Referential   │
+       │  - NetworkX Relationship Graph│   │  - Geometric Boundary Checks  │
+       │  - Spatial Proximity Analysis │   │  - Schema v0.x -> v1.0.0      │
+       └───────────────┬───────────────┘   └───────────────┬───────────────┘
+                       │                               │
+                       └───────────────┬───────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       MONGODB PERSISTENCE & CHUNKING                        │
+│  - DesignIR Root Document (metadata, tokens, components, assets, graph)     │
+│  - DesignIRPage Chunks (auto-split if >3MB or >3 pages to protect 16MB cap) │
+│  - Atomic Page Reassembly & Direct Partial Page Updates                     │
+└──────────────────────┬───────────────────────────────┬──────────────────────┘
+                       │                               │
+                       ▼                               ▼
+       ┌───────────────────────────────┐   ┌───────────────────────────────┐
+       │   Complete Project Generator  │   │  Selective Component Generator│
+       │     (Milestone 8 Pipeline)    │   │      (Milestone 8 Pipeline)   │
+       └───────────────────────────────┘   └───────────────────────────────┘
+```
+
+### 13.2 Versioned Design IR Schema Specification
+The schema is versioned (`IR_VERSION = '1.0.0'`) and structured into clean, modular layers:
+
+* **1. Document Level (`createIRDocument`):**
+  * `documentId`: Unique canonical ID (e.g., `ir_ecomKey789_1715000000`).
+  * `fileKey`: Source Figma file key.
+  * `fileName`: Figma document name.
+  * `version`: Canonical IR version string (`1.0.0`).
+  * `metadata`: Import timestamps, generator version, total node counts, page count, component count, asset count.
+  * `pages`: Array of canonical `IRPage` objects (or reference IDs when chunked).
+  * `tokens`: Extracted system-wide design tokens.
+  * `components`: Normalized component definitions catalog.
+  * `assets`: Visual assets catalog (images, SVGs, icons) linked to nodes.
+  * `relationships`: Spatial and structural relationship graph.
+
+* **2. Page Level (`createIRPage`):**
+  * `id`: Page ID (matching Figma canvas node ID).
+  * `name`: Page name (e.g., "Storefront Home").
+  * `dimensions`: Page width and height (`width`, `height`).
+  * `sections`: Array of top-level visual sections.
+  * `children`: Array of root `IRNode` design trees.
+  * `metadata`: Page node count and layout metrics.
+
+* **3. Design Node Level (`createIRNode`):**
+  * `id` & `figmaId`: Stable identifier.
+  * `name`: Node name in Figma.
+  * `type`: Standardized node type (`FRAME`, `COMPONENT`, `INSTANCE`, `TEXT`, `VECTOR`, `IMAGE`, `GROUP`).
+  * `semanticType`: Canonical semantic classification.
+  * `semantics`: Rich metadata `{ type, confidence, evidence, classificationSource, isExplicit }`.
+  * `bounds` & `relativeBounds`: Absolute canvas coordinates and relative parent coordinates `{ x, y, width, height }`.
+  * `layout`: Complete layout descriptor `{ mode: 'FLEX_ROW' | 'FLEX_COLUMN' | 'GRID' | 'NONE', direction, gap, padding, justifyContent, alignItems, wrap, sizing }`.
+  * `styles`: Visual styling `{ borderRadius, borderWidth, opacity, ... }`.
+  * `typography`: Text styling `{ fontFamily, fontSize, fontWeight, lineHeight, textAlign, letterSpacing }`.
+  * `effects`: Shadows and blurs `{ type, offsetX, offsetY, blur, spread, color, opacity }`.
+  * `fills`: Solid, gradient, or image fill layers.
+  * `strokes`: Stroke colors, weights, and alignments.
+  * `assets`: Attached asset descriptors with public URLs and dimensions.
+  * `text`: Text content / string value.
+  * `relationships`: `{ parentId, childIds, siblingIndex, inferredLayout, alignments, dependencies }`.
+  * `metadata`: `{ isComponent, isInstance, componentId, componentProperties, variantProperties, visible, opacity }`.
+
+* **4. Component Level (`createIRComponent`):**
+  * `id`: Canonical component identifier (e.g., `comp_1:104`).
+  * `name`: Component name.
+  * `sourceNodeId`: Original Figma node ID.
+  * `componentType`: `NATIVE_FIGMA`, `COMPONENT_SET`, or `INFERRED_PATTERN`.
+  * `variants`: Extracted variant property combinations and options.
+  * `properties`: Component properties schema.
+  * `dependencies`: Transitive closure `{ componentIds, assetIds, tokenKeys, allNodeIds }`.
+
+* **5. Design Tokens Level (`backend/src/ir/tokens.js`):**
+  * `colors.raw`: Deduplicated raw hex color palette sorted by usage frequency.
+  * `colors.semantic`: Inferred semantic roles (`primary`, `background`, `surface`, `text`, `border`, `accent`, `muted`).
+  * `typography`: Font family scale, font size scale (sorted ascending), font weights, line heights, and named typography styles.
+  * `spacing`: Detected gap and padding scales (sorted numeric values).
+  * `radii`: Border radius scale (e.g., `xs`, `sm`, `md`, `lg`, `xl`, `full`).
+  * `shadows`: Normalized drop shadow presets with CSS box-shadow equivalents.
+
+* **6. Assets Level (`createIRAsset`):**
+  * `assetId`, `sourceNodeId`, `assetType` (`image`, `vector_svg`, `icon`), `format` (`png`, `svg`, `jpg`), `storageReference`, `publicUrl`, `dimensions`, `fileSize`, `mimeType`.
+
+---
+
+### 13.3 Semantic Classification Architecture
+The semantic engine categorizes every node into one of 17 canonical semantic types without forcing false confidence:
+* **Canonical Semantic Types:** `Button`, `Input`, `Card`, `Navbar`, `Sidebar`, `Modal`, `Form`, `Table`, `List`, `Header`, `Footer`, `Section`, `Container`, `Image`, `Text`, `Icon`, `Unknown`.
+* **Classification Metadata:**
+  * `confidence`: Float between 0.0 and 1.0 based on structural signals, auto-layout geometry, child elements, and naming heuristics.
+  * `evidence`: Array of explicit reasons (e.g., `["Auto-layout row with centered text child", "Figma node name matches button pattern"]`).
+  * `classificationSource`: `FIGMA_EXPLICIT`, `RULE_BASED`, `ML_CLASSIFIER`, `HEURISTIC`, or `USER_OVERRIDE`.
+  * `isExplicit`: Boolean indicating whether classification came from native Figma components/explicit authoring vs heuristic inference.
+
+---
+
+### 13.4 Transitive Component Dependency Closure & Cycle Detection
+The dependency resolver ([`backend/src/ir/dependencyResolver.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/ir/dependencyResolver.js)) enables true modular code generation:
+* **Subtree Reference Scanning:** Traverses component subtrees to find nested component instances (`type === 'INSTANCE'`), image/vector assets, and design token references.
+* **Transitive Closure Calculation:** Recursively traverses the dependency tree to resolve all required sub-components needed to render a parent component in React.
+* **Cycle Detection:** Maintains a visitation path; if a circular dependency loop is encountered (e.g., A -> B -> A), the cycle is safely broken and logged in `cycles: [["comp_A", "comp_B", "comp_A"]]` without infinite recursion.
+
+---
+
+### 13.5 Schema Validation, Serialization & Migration Framework
+* **Multi-Layer Validator ([`backend/src/ir/validator.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/ir/validator.js)):**
+  * **Structural Validation:** Enforces documentId, fileKey, version, and non-empty pages.
+  * **Referential Integrity:** Verifies that instance `componentId` references point to existing components and asset references exist.
+  * **Geometric Boundaries:** Checks for valid, positive bounds and warns on unusual geometry.
+  * **Idempotency:** Flags duplicate node IDs across pages.
+* **Deterministic Serialization ([`backend/src/ir/serializer.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/ir/serializer.js)):**
+  * Stable key sorting ensures idempotent JSON output.
+* **Schema Migration Engine ([`migrateDesignIR`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/ir/serializer.js)):**
+  * Supports seamless upgrades from legacy versions (e.g. `v0.8.0` -> `v1.0.0`) by backfilling missing token structures, converting raw bounds, and wrapping unclassified semantics.
+
+---
+
+### 13.6 MongoDB Persistence & Automatic Page Chunking Engine
+To protect against MongoDB's 16MB document size limit on large enterprise Figma files, the persistence layer ([`backend/src/services/designIRService.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/services/designIRService.js)) implements an automated chunking strategy:
+* **Models:**
+  * `DesignIR`: Root document containing tokens, components catalog, asset catalog, relationship graph, and page summaries.
+  * `DesignIRPage`: Individual collection storing large page trees separately (`pageId`, `pageIndex`, `children`, `sections`, `dimensions`).
+* **Chunking Trigger:**
+  * If estimated JSON size exceeds **3MB** or page count exceeds **3 pages**, `isChunked` is automatically set to `true`.
+  * Pages are stored in the `design_ir_pages` collection with compound indexes on `{ projectId: 1, pageId: 1 }`.
+* **Transparent Reassembly & Fast Queries:**
+  * `getDesignIRByProjectId(projectId)` automatically reassembles chunked pages on retrieval.
+  * `getDesignIRPage(projectId, pageId)` retrieves a single page directly without loading the rest of the document into memory.
+  * `updateDesignIRPage(projectId, pageId, updates)` allows atomic in-place updates of a single page.
+
+---
+
+### 13.7 Python FastAPI Microservice Integration (`/api/v1/ir/enrich`)
+The Python AI microservice natively supports the canonical Design IR:
+* **Pydantic Schema Models ([`ai-service/app/models/ir.py`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/ai-service/app/models/ir.py)):**
+  * Strictly typed validation for `DesignIRDocument`, `IRPage`, `IRNode`, `IRComponent`, `IRAsset`, `IRTokens`, `IRSemantics`.
+* **FastAPI Enrichment Endpoint ([`ai-service/app/api/routes/analysis.py`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/ai-service/app/api/routes/analysis.py)):**
+  * `POST /api/v1/ir/enrich`: Accepts canonical Design IR, constructs the NetworkX relationship graph, analyzes cross-node spatial dependencies, and returns the enriched document.
+* **Node.js Client Method ([`backend/src/services/pythonServiceClient.js`](file:///c:/Users/VISHAL%20BHAGAT/Desktop/Reagmat/backend/src/services/pythonServiceClient.js)):**
+  * `pythonServiceClient.enrichDesignIR(irDocument)`: Seamless RPC proxy with automatic error handling and authentication secret injection.
+
+---
+
+### 13.8 Express REST API Endpoints
+All Design IR capabilities are surfaced via clean REST endpoints under `/api/projects/:id/ir/*`:
+* `POST /api/projects/:id/ir/generate`: Generates canonical IR from existing DesignTree and persists to MongoDB.
+* `GET /api/projects/:id/ir`: Returns complete assembled canonical Design IR.
+* `GET /api/projects/:id/ir/pages/:pageId`: Returns a single page directly (fast chunked read).
+* `GET /api/projects/:id/ir/components`: Returns the extracted components catalog.
+* `GET /api/projects/:id/ir/components/:componentId`: Returns a specific component definition.
+* `GET /api/projects/:id/ir/components/:componentId/dependencies`: Returns complete transitive dependency closure.
+* `GET /api/projects/:id/ir/tokens`: Returns unified design tokens (colors, typography, spacing, radii, shadows).
+* **Backward Compatibility:** All existing endpoints (`/api/projects/:id/design`, `/api/projects/:id/tree`, `/api/projects/:id/components`) remain 100% operational.
+
+---
+
+### 13.9 Example Design IR JSON Schema
+Below is an excerpt of a canonical Design IR document generated by the engine:
+
+```json
+{
+  "documentId": "ir_proj_6af1b73b_1715001234",
+  "fileKey": "ecomKey789",
+  "fileName": "E-Commerce App Design",
+  "version": "1.0.0",
+  "metadata": {
+    "figmaVersion": "1.0",
+    "importedAt": "2026-11-09T12:00:00.000Z",
+    "irGeneratedAt": "2026-11-09T12:00:05.000Z",
+    "generator": "Reagmat Design IR Builder v1.0.0",
+    "totalNodeCount": 42,
+    "pageCount": 1,
+    "componentCount": 4,
+    "assetCount": 2,
+    "tokenCount": 18
+  },
+  "pages": [
+    {
+      "id": "0:1",
+      "name": "Storefront Home",
+      "dimensions": { "width": 1440, "height": 900 },
+      "sections": [],
+      "children": [
+        {
+          "id": "1:100",
+          "figmaId": "1:100",
+          "name": "App Header Navbar",
+          "type": "FRAME",
+          "semanticType": "Navbar",
+          "semantics": {
+            "type": "Navbar",
+            "confidence": 0.92,
+            "evidence": ["Name indicates navigation bar", "Horizontal layout flow"],
+            "classificationSource": "HEURISTIC",
+            "isExplicit": false
+          },
+          "bounds": { "x": 0, "y": 0, "width": 1440, "height": 80 },
+          "relativeBounds": { "x": 0, "y": 0, "width": 1440, "height": 80 },
+          "layout": {
+            "mode": "FLEX_ROW",
+            "direction": "horizontal",
+            "gap": 24,
+            "padding": { "top": 16, "right": 32, "bottom": 16, "left": 32 },
+            "justifyContent": "space-between",
+            "alignItems": "center",
+            "wrap": false,
+            "sizing": { "horizontal": "FILL", "vertical": "FIXED" }
+          },
+          "styles": {
+            "borderRadius": 0
+          },
+          "fills": [
+            { "type": "SOLID", "hex": "#FFFFFF", "rgba": "rgba(255, 255, 255, 1)" }
+          ],
+          "children": [
+            {
+              "id": "1:104",
+              "figmaId": "1:104",
+              "name": "Checkout Button",
+              "type": "COMPONENT",
+              "semanticType": "Button",
+              "semantics": {
+                "type": "Button",
+                "confidence": 0.95,
+                "evidence": ["Figma COMPONENT with Button name"],
+                "classificationSource": "FIGMA_EXPLICIT",
+                "isExplicit": true
+              },
+              "bounds": { "x": 1280, "y": 20, "width": 128, "height": 40 },
+              "relativeBounds": { "x": 1280, "y": 20, "width": 128, "height": 40 },
+              "layout": { "mode": "FLEX_ROW", "direction": "horizontal", "gap": 8 },
+              "metadata": { "isComponent": true, "isInstance": false }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "comp_1:104",
+      "name": "Checkout Button",
+      "sourceNodeId": "1:104",
+      "componentType": "NATIVE_FIGMA",
+      "variants": [],
+      "properties": {},
+      "dependencies": {
+        "componentIds": [],
+        "assetIds": [],
+        "tokenKeys": ["colors.semantic.primary"],
+        "allNodeIds": ["1:104"]
+      }
+    }
+  ],
+  "tokens": {
+    "colors": {
+      "raw": ["#2563EB", "#FFFFFF", "#111827", "#F3F4F6"],
+      "semantic": {
+        "primary": "#2563EB",
+        "background": "#FFFFFF",
+        "surface": "#F3F4F6",
+        "text": "#111827",
+        "border": "#E5E7EB"
+      }
+    },
+    "typography": {
+      "fontFamilies": ["Inter", "Roboto"],
+      "fontSizes": [12, 14, 16, 20, 24, 32],
+      "fontWeights": [400, 500, 600, 700],
+      "lineHeights": [16, 20, 24, 28, 36]
+    },
+    "spacing": [4, 8, 12, 16, 24, 32, 48],
+    "radii": { "xs": 2, "sm": 4, "md": 8, "lg": 12, "full": 9999 },
+    "shadows": [
+      {
+        "name": "shadow-1",
+        "type": "DROP_SHADOW",
+        "offsetX": 0,
+        "offsetY": 4,
+        "blur": 12,
+        "css": "0px 4px 12px rgba(0, 0, 0, 0.1)"
+      }
+    ]
+  },
+  "assets": [
+    {
+      "assetId": "asset_2:202",
+      "sourceNodeId": "2:202",
+      "assetType": "image",
+      "format": "png",
+      "storageReference": "/api/assets/ecomKey789/2-202_1x.png",
+      "publicUrl": "/api/assets/ecomKey789/2-202_1x.png",
+      "dimensions": { "width": 320, "height": 200 },
+      "fileSize": 45200,
+      "mimeType": "image/png"
+    }
+  ],
+  "relationships": {
+    "nodes": [],
+    "edges": [],
+    "statistics": { "nodeCount": 42, "edgeCount": 48 }
+  }
+}
+```
+
+---
+
+### 13.10 Test Verification & Quality Assurance
+* **Node.js Native Test Runner Suite (`backend/tests/`):**
+  * **139 passed** across 44 suites with 0 failures (`npm --prefix backend test`).
+  * Dedicated Design IR test suite (`backend/tests/designIR.test.js`): **21 tests passing** covering canonical building, token extraction, component closure resolution, cycle detection, schema validation, serialization/deserialization, legacy migration, MongoDB chunking persistence, and REST API routes.
+  * Real integration test suite (`backend/tests/realIntegration.test.js`): **10 tests passing** testing live communication with Python FastAPI.
+* **Python FastAPI Pytest Suite (`ai-service/tests/`):**
+  * **28 passed** in 0.74s with 100% success rate across `test_ir.py`, `test_analysis.py`, `test_geometry_engine.py`, `test_health.py`, and `test_security.py`.
+  * Verifies Pydantic Design IR schema validation, authentication checks, NetworkX relationship graph enrichment, and empty document handling.
+
