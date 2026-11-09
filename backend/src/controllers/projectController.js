@@ -2,6 +2,8 @@ import { Project } from '../models/Project.js';
 import { DesignTree } from '../models/DesignTree.js';
 import { GeneratedCode } from '../models/GeneratedCode.js';
 import { Asset } from '../models/Asset.js';
+import { DesignIR } from '../models/DesignIR.js';
+import { DesignIRPage } from '../models/DesignIRPage.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
@@ -169,6 +171,8 @@ export const deleteProject = async (req, res, next) => {
     await Promise.all([
       DesignTree.deleteMany({ projectId: id }),
       GeneratedCode.deleteMany({ projectId: id }),
+      DesignIR.deleteMany({ projectId: id }),
+      DesignIRPage.deleteMany({ projectId: id }),
       Project.findByIdAndDelete(id),
     ]);
 

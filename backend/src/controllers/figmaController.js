@@ -11,6 +11,8 @@ import {
 } from '../services/assetService.js';
 import { Project } from '../models/Project.js';
 import { DesignTree } from '../models/DesignTree.js';
+import { buildDesignIR } from '../ir/builder.js';
+import { saveDesignIR } from '../services/designIRService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { isDbConnected } from '../config/database.js';
 
@@ -126,6 +128,18 @@ export const importFigmaFile = async (req, res, next) => {
           { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
         console.log(`💾 Persisted design tree for project: ${project._id}`);
+
+        // Persist canonical Design IR
+        try {
+          const ir = buildDesignIR(
+            { pages: tree.pages, fileName: tree.fileName, fileVersion: tree.fileVersion, fileKey },
+            { projectId: project._id, fileKey, fileName: tree.fileName, figmaVersion: tree.fileVersion }
+          );
+          await saveDesignIR(project._id, ir);
+          console.log(`💾 Persisted canonical Design IR for project: ${project._id}`);
+        } catch (irErr) {
+          console.warn(`⚠️ Warning: Failed to persist canonical Design IR: ${irErr.message}`);
+        }
       } catch (dbError) {
         console.error(`⚠️ Warning: Failed to persist to MongoDB: ${dbError.message}`);
         // Do not fail the client request if caching fails; continue with in-memory parsed result
