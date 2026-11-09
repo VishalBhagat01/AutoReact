@@ -8,6 +8,7 @@ from app.models.responses import (
     HealthResponse,
     NodeBreakdown,
 )
+from app.models.ir import DesignIRDocument, IRPage, IRNode, IRComponent, IRAsset
 
 __all__ = [
     "Bounds",
@@ -23,4 +24,9 @@ __all__ = [
     "DesignAnalysisResponse",
     "DesignMetadata",
     "NodeBreakdown",
+    "DesignIRDocument",
+    "IRPage",
+    "IRNode",
+    "IRComponent",
+    "IRAsset",
 ]

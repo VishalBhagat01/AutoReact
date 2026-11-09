@@ -329,6 +329,26 @@ export class PythonServiceClient {
   }
 
   /**
+   * Enrich canonical Design IR with geometry analysis and relationship graph from Python microservice
+   * POST /api/v1/ir/enrich
+   * @param {Object} irDocument - Canonical Design IR document
+   * @param {Object} [options] - Request options
+   * @returns {Promise<Object>}
+   */
+  async enrichDesignIR(irDocument, options = {}) {
+    if (!irDocument || typeof irDocument !== 'object') {
+      throw new AppError('Design IR document is required for enrichment', 400, 'MISSING_IR_DOC');
+    }
+
+    return this.request({
+      method: 'POST',
+      url: '/api/v1/ir/enrich',
+      data: irDocument,
+      timeout: options.timeout,
+    });
+  }
+
+  /**
    * Non-blocking availability probe for health checks and status reporting
    * @returns {Promise<boolean>}
    */

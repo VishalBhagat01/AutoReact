@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, status
 from app.core.security import verify_internal_service_secret
 from app.models.geometry import (
@@ -9,7 +9,9 @@ from app.models.geometry import (
 )
 from app.models.requests import DesignAnalysisRequest
 from app.models.responses import DesignAnalysisResponse
+from app.models.ir import DesignIRDocument
 from app.services.design_service import design_service
+from app.engine.graph_builder import build_design_relationship_graph
 
 router = APIRouter(prefix="/api/v1", tags=["Design Intelligence & Geometry"])
 
@@ -87,3 +89,32 @@ async def detect_components(request: DesignAnalysisRequest) -> List[DetectedComp
     based on structural similarity, geometry aspect ratio, and style consistency.
     """
     return design_service.detect_components(request)
+
+
+@router.post(
+    "/ir/enrich",
+    status_code=status.HTTP_200_OK,
+    summary="Enrich canonical Design IR with geometry analysis and relationship graph",
+    dependencies=[Depends(verify_internal_service_secret)],
+)
+async def enrich_design_ir(document: DesignIRDocument) -> Dict[str, Any]:
+    """
+    Accepts canonical Design IR document, analyzes geometry and constructs
+    NetworkX relationship graph across pages, and returns the enriched Design IR.
+    """
+    enriched_doc = document.model_dump(by_alias=True)
+
+    all_nodes = []
+    for page in document.pages:
+        for child in page.children:
+            all_nodes.append(child.model_dump(by_alias=True))
+
+    if all_nodes:
+        graph_data = design_graph_builder.build_graph(all_nodes)
+        enriched_doc["relationships"] = graph_data.model_dump(by_alias=True)
+
+    return {
+        "success": True,
+        "data": enriched_doc,
+        "message": "Design IR successfully enriched with spatial intelligence",
+    }
